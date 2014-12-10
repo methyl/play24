@@ -7,28 +7,50 @@ module Play24
     end
 
     def run!(login, password, retry_times=10)
-      retry_times.times do |i|
+      mechanize.reset
+      mechanize.get('https://24.play.pl')
+      submit_saml
+
+      if page.forms[0].random.length < 10
+        random = page.content.match(/jQuery\('input\[name="random"\]'\)\.val\('(.+)'\)/)
+        if random.nil?
+          puts "PROCESS_PID: #{Process.pid}" 
+          puts 'kurwa'
+          binding.pry
+          run!(login, password)
+        else
+          random = random[-1]
+        end
+        page.forms[0].random = random
+      end
+      puts "RANDOM: #{random}"
+
+      page.forms[0].login = login
+      page.forms[0].password = password
+      submit
+      loop do
         begin
-          mechanize.get('https://logowanie.play.pl')
-          mechanize.get("https://logowanie.play.pl/p4webportal/SsoRequest")
           submit
-          random = page.content.match(/jQuery\('input\[name="random"\]'\)\.val\('(.+)'\)/)[-1]
-          page.forms[0].random = random
-          page.forms[0].login = login
-          page.forms[0].password = password
-          4.times { submit }
           break
-        rescue Mechanize::ResponseCodeError
-          puts "Retrying LoginProcedure #{i} time..."
-          sleep (2 ** i) / 5 # sleep in exponential time
+        rescue Exception => e
+          puts e
         end
       end
     end
 
     private
 
-    def submit(form_number = 0)
-      page.forms[form_number].submit
+    def submit_saml(form_number = 0)
+      return unless mechanize.page.forms[0].fields[0]
+      name = mechanize.page.forms[0].fields[0].name
+      if name == 'SAMLRequest' || name == 'SAMLResponse'
+        submit
+        submit_saml
+      end
+    end
+
+    def submit
+      mechanize.page.forms[0].submit
     end
 
     def page
